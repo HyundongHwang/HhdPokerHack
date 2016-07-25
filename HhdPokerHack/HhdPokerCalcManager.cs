@@ -45,14 +45,26 @@ namespace HhdPokerHack
         private List<ComparableImage> _largeCatCcList = new List<ComparableImage>();
         private List<ComparableImage> _largeNumCcList = new List<ComparableImage>();
 
+        private object _orgBm_lock = new object();
+
+        private DateTime _now = DateTime.Now;
+
+
+
         public async Task<string> Calc(string ssPath, Dictionary<string, object> allCardDic)
         {
-            var now = DateTime.Now;
+            var orgBmList = new List<Bitmap>();
 
-            var orgBm = new Bitmap(ssPath);
+            for (int i = 0; i < 50; i++)
+            {
+                orgBmList.Add(new Bitmap(ssPath));
+            }
+
             var uc = new CalcScreenPosition();
             var resultDic = new Dictionary<string, string>();
             var taskList = new List<Task>();
+            var orgBmListIdx = 0;
+            _now = DateTime.Now;
 
             foreach (FrameworkElement child in (uc.Content as Grid).Children)
             {
@@ -61,6 +73,8 @@ namespace HhdPokerHack
 
                 var fragRect = new System.Drawing.Rectangle((int)child.Margin.Left, (int)child.Margin.Top, (int)child.Width, (int)child.Height);
                 var childName = child.Name;
+                var orgBm = orgBmList[orgBmListIdx % orgBmList.Count];
+                orgBmListIdx++;
 
                 var task = Task.Run(() =>
                 {
@@ -70,9 +84,17 @@ namespace HhdPokerHack
                 taskList.Add(task);
             }
 
+            Trace.TraceInformation($"taskList.Count : {taskList.Count}");
             Task.WaitAll(taskList.ToArray());
-            Trace.TraceInformation($"Task.WaitAll taskList end");
 
+            foreach (var bm in orgBmList)
+            {
+                bm.Dispose();
+            }
+
+            Trace.TraceInformation($"find pattern time : {DateTime.Now - _now}");
+            _now = DateTime.Now;
+            
 
 
             var handStr = "";
@@ -91,14 +113,22 @@ namespace HhdPokerHack
                     }
                 }
 
+                if (!playerHandList.Any())
+                    continue;
+
                 var playerHandStr = string.Join("+", playerHandList);
                 playerHandStrList.Add(playerHandStr);
             }
 
             handStr = string.Join("%0D%0A", playerHandStrList);
             Trace.TraceInformation($"handStr : {handStr}");
-            Trace.TraceInformation($"image sim time : {DateTime.Now - now}");
-            now = DateTime.Now;
+            Trace.TraceInformation($"handStr time : {DateTime.Now - _now}");
+            _now = DateTime.Now;
+
+
+
+            if (string.IsNullOrWhiteSpace(handStr))
+                return "no hand str!!!";
 
 
 
@@ -114,17 +144,44 @@ namespace HhdPokerHack
                     var endIdx = resStr.IndexOf("</pre>");
                     var preStr = resStr.Substring(startIdx, endIdx - startIdx);
 
-                    Trace.TraceInformation($"poker calc time : {DateTime.Now - now}");
-                    now = DateTime.Now;
+                    Trace.TraceInformation($"poker api response time : {DateTime.Now - _now}");
+                    _now = DateTime.Now;
 
-//7 - card Stud Hi: 500000 sampled outcomes
-//cards win   % win    lose % lose  tie % tie     EV
-//4c 2c  2d           98405  19.68  401581  80.32   14  0.00  0.197
-//Qc Jd  9d           65107  13.02  434834  86.97   59  0.01  0.130
-//Ac Jh  9h  8h  3h  167200  33.44  332685  66.54  115  0.02  0.335
-//9s 8s  2h           42703   8.54  457130  91.43  167  0.03  0.086
-//Ts Td  8d          126376  25.28  373561  74.71   63  0.01  0.253
+                    //7-card Stud Hi: 500000 sampled outcomes
+                    //cards win   % win    lose % lose  tie % tie     EV
+                    //4c 2c  2d           98405  19.68  401581  80.32   14  0.00  0.197
+                    //Qc Jd  9d           65107  13.02  434834  86.97   59  0.01  0.130
+                    //Ac Jh  9h  8h  3h  167200  33.44  332685  66.54  115  0.02  0.335
+                    //9s 8s  2h           42703   8.54  457130  91.43  167  0.03  0.086
+                    //Ts Td  8d          126376  25.28  373561  74.71   63  0.01  0.253
 
+                    var lineList = preStr.Split("\n\r".ToArray(), StringSplitOptions.RemoveEmptyEntries);
+                    var winList = new List<double>();
+                    var maxTokenCount = 0;
+                    var meWin = 0.0;
+
+                    foreach (var line in lineList)
+                    {
+                        var tokenList = line.Split(" \t".ToArray(), StringSplitOptions.RemoveEmptyEntries);
+                        var win = tokenList.FirstOrDefault(t => t.Contains('.'));
+
+                        if (win != null)
+                        {
+                            winList.Add(double.Parse(win));
+
+                            if (tokenList.Length > maxTokenCount)
+                            {
+                                meWin = double.Parse(win);
+                                maxTokenCount = tokenList.Length;
+                            }
+                        }
+                    }
+
+                    var guideStr = $"승률 {meWin}% " + (meWin == winList.Max() ? "BET↑↑↑" : "DIE↓↓↓");
+                    preStr += "\n";
+                    preStr += "\n";
+                    preStr += guideStr;
+                    Trace.TraceInformation($"preStr : {preStr}");
                     return preStr;
                 }
             }
@@ -132,20 +189,19 @@ namespace HhdPokerHack
             {
                 return ex.ToString();
             }
-        }
 
-        private object _orgBm_lock = new object();
+
+        }
 
         private void _FindPattern(Bitmap orgBm, Dictionary<string, string> resultDic, Rectangle fragRect, string childName)
         {
-            Trace.TraceInformation($"_FindPattern {childName} start");
             Bitmap fragBm = null;
 
-            lock (_orgBm_lock)
+            lock (orgBm)
             {
                 fragBm = orgBm.Clone(fragRect, orgBm.PixelFormat);
             }
-            
+
             var fragPath = System.IO.Path.GetTempFileName();
             fragBm.Save(fragPath);
 
@@ -188,7 +244,7 @@ namespace HhdPokerHack
                 resultDic.Add(childName, name.Last().ToString());
             }
 
-            Trace.TraceInformation($"_FindPattern {childName} end");
+            fragBm.Dispose();
         }
     }
 }
