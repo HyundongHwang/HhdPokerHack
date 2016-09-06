@@ -34,7 +34,7 @@ namespace HhdPokerHack
 
         public event EventHandler<string> NewFileCreated;
 
-        private const string _FTP_SERVER = "ftp://192.168.43.1:2221";
+        private const string _FTP_SERVER = "ftp://192.168.0.4:2221";
 
         private async Task _RunLoop()
         {

@@ -57,7 +57,7 @@ namespace HhdPokerHack
         private async void _HhdFileWatchManager_NewFileCreated(object sender, string filePath)
         {
             Trace.TraceInformation($"_HhdFileWatchManager_NewFileCreated {filePath}");
-            //this.ImgObj.Source = new BitmapImage(new Uri(filePath));
+            this.ImgObj.Source = new BitmapImage(new Uri(filePath));
             var preStr = await HhdPokerCalcManager.Current.Calc(filePath, null);
             this.TbPre.Text = preStr;
         }
